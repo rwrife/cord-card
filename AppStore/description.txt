@@ -1,0 +1,3 @@
+Cord Card is planned as a private inventory for cables, chargers, and adapters you already own. Record connector ends, the rating printed on each item, and the place you keep it. Search your collection locally and make a backup you control. No account or automatic hardware scanning is part of the plan.
+
+This repository is currently an early development skeleton. Inventory, search, backup, and releases are not implemented yet. Connector labels are manual notes, not an electrical compatibility or safety guarantee.
