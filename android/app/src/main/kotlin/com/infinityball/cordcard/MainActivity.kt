@@ -1,4 +1,4 @@
-package com.infinityball.cord_card
+package com.infinityball.cordcard
 
 import io.flutter.embedding.android.FlutterActivity
 
