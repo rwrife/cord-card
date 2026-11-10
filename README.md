@@ -16,7 +16,7 @@ Important limitation: manual inventory and label helper only. A connector match 
 
 ## Status / milestones
 
-Flutter 3.47.7 project skeleton for Windows, Android, and iOS exists. Documentation, app listing copy, and generated artwork are scaffolded; inventory, persistence, search, backups, adaptive UX, and release automation are **not implemented**. Issues track each milestone. `AppStore/icon.png` was generated via OpenAI Images (`gpt-image-2.5-flare`); wiring into all launcher sizes is tracked in the backlog.
+Flutter 3.47.7 project skeleton for Windows, Android, and iOS exists. CI builds Windows release and Android debug, and checks committed platform files; iOS compilation remains unverified. Inventory, persistence, search, backups, adaptive UX, and release automation are **not implemented**. Issues track each milestone. `AppStore/icon.png` was generated via OpenAI Images (`gpt-image-2.5-flare`); launcher review remains in the backlog.
 
 ## Scope
 

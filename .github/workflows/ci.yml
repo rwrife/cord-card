@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+      - run: flutter --version
+      - run: dart run tool/check_platforms.dart
+      - run: flutter pub get --enforce-lockfile
+      - run: git diff --exit-code
+      - run: dart format --output=none --set-exit-if-changed lib test tool
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build windows --release
+      - name: Check portable Windows bundle and ZIP inputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = 'build/windows/x64/runner/Release'
+          foreach ($path in @('cord_card.exe', 'flutter_windows.dll', 'data/icudtl.dat', 'data/flutter_assets/AssetManifest.bin')) {
+            $file = Join-Path $dir $path
+            if (!(Test-Path $file -PathType Leaf) -or (Get-Item $file).Length -eq 0) { throw "Missing or empty: $file" }
+          }
+          Compress-Archive -Path "$dir/*" -DestinationPath cord-card-windows.zip
+          Add-Type -AssemblyName System.IO.Compression
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $PWD 'cord-card-windows.zip'))
+          try {
+            $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+            foreach ($path in @('cord_card.exe', 'flutter_windows.dll', 'data/icudtl.dat', 'data/flutter_assets/AssetManifest.bin')) {
+              if ($path -notin $entries) { throw "ZIP missing: $path" }
+            }
+            Write-Output "Windows ZIP inputs verified: $($entries.Count) entries"
+          } finally { $zip.Dispose() }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cord-card-windows-ci
+          path: cord-card-windows.zip
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/project516/flutter:3.47.7@sha256:d90580050fc8461773cdb48a38cffe67973fdd2963c72bb378d96d697dc02840
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Flutter and platform files
+        run: |
+          flutter --version
+          dart run tool/check_platforms.dart
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter test
+      - run: flutter analyze
+      - run: flutter build apk --debug
+      - name: Assert APK and clean tracked tree
+        run: |
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git diff --exit-code
