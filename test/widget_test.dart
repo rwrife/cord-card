@@ -94,7 +94,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Mystery black cable'), findsOneWidget);
-    expect(find.text('cable · unknown / unknown · stored'), findsOneWidget);
+    expect(
+      find.text('cable · unknown / unknown · Box 3 · stored'),
+      findsOneWidget,
+    );
 
     final saved = await store.load();
     expect(saved.length, 1);
@@ -144,7 +147,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('New Name'), findsOneWidget);
-    expect(find.text('cable · USB-C / Lightning · stored'), findsOneWidget);
+    expect(
+      find.text('cable · USB-C / Lightning · Bin A · stored'),
+      findsOneWidget,
+    );
 
     final saved = await store.load();
     expect(saved.length, 1);
@@ -192,9 +198,67 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, 'Retire'));
     await tester.pumpAndSettle();
 
-    expect(find.text('cable · unknown / unknown · retired'), findsOneWidget);
+    expect(
+      find.text('cable · unknown / unknown · unknown spot · retired'),
+      findsOneWidget,
+    );
     saved = await store.load();
     expect(saved.first.status, CordStatus.retired);
+  });
+
+  testWidgets('search filters and moved status survive restart', (
+    tester,
+  ) async {
+    await store.save([
+      CordItem(
+        id: 'known',
+        name: 'Desk cable',
+        kind: CordKind.cable,
+        endA: 'USB-C',
+        storageSpot: 'Drawer',
+        updatedAt: DateTime.utc(2026),
+      ),
+      CordItem(
+        id: 'unknown',
+        name: 'Mystery USB-C',
+        kind: CordKind.cable,
+        storageSpot: 'Drawer',
+        updatedAt: DateTime.utc(2026),
+      ),
+    ]);
+    await tester.pumpWidget(CordCardApp(store: store));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('filter-connector')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('USB-C').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Desk cable'), findsOneWidget);
+    expect(find.text('Mystery USB-C'), findsNothing);
+    await tester.enterText(find.byKey(const Key('search-query')), 'mystery');
+    await tester.pumpAndSettle();
+    expect(find.text('No items match filters'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('reset-filters')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('filter-spot')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Drawer').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Mystery USB-C'), findsOneWidget);
+    await tester.tap(find.text('Desk cable'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mark moved'));
+    await tester.pumpAndSettle();
+    expect((await store.load()).first.status, CordStatus.moved);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(CordCardApp(store: store));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Drawer · moved'), findsOneWidget);
   });
 
   testWidgets('deletes item permanently with confirmation', (tester) async {

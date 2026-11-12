@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'cord_item.dart';
+import 'cord_search.dart';
 import 'cord_store.dart';
 
 void main() => runApp(const CordCardApp());
@@ -24,6 +25,16 @@ class _CordCardAppState extends State<CordCardApp> {
   List<CordItem> _items = [];
   String? _error;
   bool _busy = false;
+  final _query = TextEditingController();
+  String _connector = '';
+  String _spot = '';
+  CordStatus? _status;
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -87,6 +98,13 @@ class _CordCardAppState extends State<CordCardApp> {
     );
   }
 
+  Future<void> _setStatus(CordItem item, CordStatus status) async {
+    await _save([
+      for (final current in _items)
+        if (current.id == item.id) _copy(current, status: status) else current,
+    ]);
+  }
+
   Future<void> _retire(CordItem item) async {
     final confirmed = await showDialog<bool>(
       context: _navigator.currentContext!,
@@ -140,103 +158,239 @@ class _CordCardAppState extends State<CordCardApp> {
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Cord Card',
-    navigatorKey: _navigator,
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF142537)),
-    ),
-    home: Scaffold(
-      appBar: AppBar(title: const Text('Cord Card')),
-      body: SafeArea(
-        child: _error != null && _store == null
-            ? Center(child: Text(_error!))
-            : _store == null
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text(
-                      'Manual notes only. Connector fit does not prove voltage, power, data or USB-PD compatibility. Check device specifications before connecting.',
+  Widget build(BuildContext context) {
+    final connectors = knownConnectors(_items);
+    final spots = {
+      for (final i in _items)
+        if (i.storageSpot.trim().isNotEmpty) i.storageSpot.trim(),
+    }.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final visible = searchCords(
+      _items,
+      keyword: _query.text,
+      connector: _connector,
+      storageSpot: _spot,
+      status: _status,
+    );
+
+    return MaterialApp(
+      title: 'Cord Card',
+      navigatorKey: _navigator,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF142537)),
+      ),
+      home: Scaffold(
+        appBar: AppBar(title: const Text('Cord Card')),
+        body: SafeArea(
+          child: _error != null && _store == null
+              ? Center(child: Text(_error!))
+              : _store == null
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text(
+                        'Manual notes only. Connector fit does not prove voltage, power, data or USB-PD compatibility. Check device specifications before connecting.',
+                      ),
                     ),
-                  ),
-                  if (_error != null)
                     Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(_error!, key: const Key('save-error')),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        key: const Key('search-query'),
+                        controller: _query,
+                        decoration: const InputDecoration(
+                          labelText: 'Search keyword',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
                     ),
-                  Expanded(
-                    child: _items.isEmpty
-                        ? const Center(child: Text('No items yet'))
-                        : ListView.builder(
-                            itemCount: _items.length,
-                            itemBuilder: (context, index) {
-                              final item = _items[index];
-                              return ListTile(
-                                title: Text(item.name),
-                                subtitle: Text(
-                                  '${item.kind.name} · ${item.endA ?? 'unknown'} / ${item.endB ?? 'unknown'} · ${item.status.name}',
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          DropdownButton<String>(
+                            key: const Key('filter-connector'),
+                            value: _connector.isEmpty ? null : _connector,
+                            hint: const Text('Connector: all'),
+                            items: [
+                              const DropdownMenuItem(
+                                value: '',
+                                child: Text('Connector: all'),
+                              ),
+                              for (final c in {
+                                ...connectors,
+                                if (_connector.isNotEmpty) _connector,
+                              })
+                                DropdownMenuItem(value: c, child: Text(c)),
+                            ],
+                            onChanged: (val) =>
+                                setState(() => _connector = val ?? ''),
+                          ),
+                          DropdownButton<String>(
+                            key: const Key('filter-spot'),
+                            value: _spot.isEmpty ? null : _spot,
+                            hint: const Text('Spot: all'),
+                            items: [
+                              const DropdownMenuItem(
+                                value: '',
+                                child: Text('Spot: all'),
+                              ),
+                              for (final s in {
+                                ...spots,
+                                if (_spot.isNotEmpty) _spot,
+                              })
+                                DropdownMenuItem(value: s, child: Text(s)),
+                            ],
+                            onChanged: (val) =>
+                                setState(() => _spot = val ?? ''),
+                          ),
+                          DropdownButton<CordStatus?>(
+                            key: const Key('filter-status'),
+                            value: _status,
+                            hint: const Text('Status: all'),
+                            items: [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('Status: all'),
+                              ),
+                              for (final st in CordStatus.values)
+                                DropdownMenuItem(
+                                  value: st,
+                                  child: Text(st.name),
                                 ),
-                                onTap: () => showDialog<void>(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: Text(item.name),
-                                    content: SingleChildScrollView(
-                                      child: Text(
-                                        'Connectors: ${item.endA ?? 'unknown'} / ${item.endB ?? 'unknown'}\n'
-                                        'Printed rating (unverified): ${item.printedRating ?? 'unknown'}\n'
-                                        'Length (m): ${item.length?.toString() ?? 'unknown'}\n'
-                                        'Storage: ${item.storageSpot.isEmpty ? 'unknown' : item.storageSpot}\n'
-                                        'Status: ${item.status.name}\nNotes: ${item.note}',
+                            ],
+                            onChanged: (val) => setState(() => _status = val),
+                          ),
+                          if (_query.text.isNotEmpty ||
+                              _connector.isNotEmpty ||
+                              _spot.isNotEmpty ||
+                              _status != null)
+                            TextButton(
+                              key: const Key('reset-filters'),
+                              onPressed: () => setState(() {
+                                _query.clear();
+                                _connector = '';
+                                _spot = '';
+                                _status = null;
+                              }),
+                              child: const Text('Clear filters'),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(_error!, key: const Key('save-error')),
+                      ),
+                    Expanded(
+                      child: visible.isEmpty
+                          ? Center(
+                              child: Text(
+                                _items.isEmpty
+                                    ? 'No items yet'
+                                    : 'No items match filters',
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: visible.length,
+                              itemBuilder: (context, index) {
+                                final item = visible[index];
+                                return ListTile(
+                                  title: Text(item.name),
+                                  subtitle: Text(
+                                    '${item.kind.name} · ${item.endA ?? 'unknown'} / ${item.endB ?? 'unknown'} · ${item.storageSpot.isEmpty ? 'unknown spot' : item.storageSpot} · ${item.status.name}',
+                                  ),
+                                  onTap: () => showDialog<void>(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: Text(item.name),
+                                      content: SingleChildScrollView(
+                                        child: Text(
+                                          'Connectors: ${item.endA ?? 'unknown'} / ${item.endB ?? 'unknown'}\n'
+                                          'Printed rating (unverified): ${item.printedRating ?? 'unknown'}\n'
+                                          'Length (m): ${item.length?.toString() ?? 'unknown'}\n'
+                                          'Storage: ${item.storageSpot.isEmpty ? 'unknown' : item.storageSpot}\n'
+                                          'Status: ${item.status.name}\nNotes: ${item.note}',
+                                        ),
                                       ),
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () {
-                                          Navigator.pop(context);
-                                          _edit(item);
-                                        },
-                                        child: const Text('Edit'),
-                                      ),
-                                      if (item.status != CordStatus.retired)
+                                      actions: [
                                         TextButton(
                                           onPressed: () {
                                             Navigator.pop(context);
-                                            _retire(item);
+                                            _edit(item);
                                           },
-                                          child: const Text('Retire'),
+                                          child: const Text('Edit'),
                                         ),
-                                      TextButton(
-                                        onPressed: () {
-                                          Navigator.pop(context);
-                                          _delete(item);
-                                        },
-                                        child: const Text('Delete'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(context),
-                                        child: const Text('Close'),
-                                      ),
-                                    ],
+                                        if (item.status != CordStatus.stored)
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.pop(context);
+                                              _setStatus(
+                                                item,
+                                                CordStatus.stored,
+                                              );
+                                            },
+                                            child: const Text('Mark stored'),
+                                          ),
+                                        if (item.status != CordStatus.moved)
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.pop(context);
+                                              _setStatus(
+                                                item,
+                                                CordStatus.moved,
+                                              );
+                                            },
+                                            child: const Text('Mark moved'),
+                                          ),
+                                        if (item.status != CordStatus.retired)
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.pop(context);
+                                              _retire(item);
+                                            },
+                                            child: const Text('Retire'),
+                                          ),
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.pop(context);
+                                            _delete(item);
+                                          },
+                                          child: const Text('Delete'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                          child: const Text('Close'),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                ],
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+        ),
+        floatingActionButton: _store == null || _busy
+            ? null
+            : FloatingActionButton.extended(
+                onPressed: () => _edit(),
+                label: const Text('Add item'),
+                icon: const Icon(Icons.add),
               ),
       ),
-      floatingActionButton: _store == null || _busy
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => _edit(),
-              label: const Text('Add item'),
-              icon: const Icon(Icons.add),
-            ),
-    ),
-  );
+    );
+  }
 }
 
 CordItem _copy(CordItem item, {CordStatus? status}) => CordItem(
